@@ -7,14 +7,14 @@ class application(object):
 
     def __iter__(self):
         response_body = ['%s: %s' % (key, value)
-                         for key, value in sorted(self.environ.items())]
+                         for key, value in sorted(environ.items())]
         response_body = '\n'.join(response_body)
 
         status = '200 OK'
         response_headers = [('Content-Type', 'text/plain'),
                             ('Content-Length', str(len(response_body)))]
-        self.start_response(status, response_headers)
-        yield response_body.encode("utf-8")
+        start_response(status, response_headers)
+        yield response_body.encode("utf8")
 
 httpd = make_server(
     '192.168.0.210',

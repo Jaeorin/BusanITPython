@@ -1,15 +1,13 @@
-#!/usr/bin/env python
-
-class iot(object):
+class Iot(object):
     name = None
-    def __init__(self):
 
-obj1 = iot()
-print obj1.name
-obj1.name = "JungHU"
-print obj1.name
+    def __init__(self, name_arg):
+        print("init call")
+        name = name_arg
 
-obj2 = iot()
-print obj2.name
-obj2.name = "JungH.UK"
-print obj2.name
+
+obj1 = Iot("iot object 1")
+print(obj1.name)
+
+obj2 = Iot("iot object 2")
+print(obj2.name)

@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 def handler():
-	print "Initialize Handler"
+	print("Initialize Handler")
 	while True:
 		value = (yield)
-		print "Received %s" % value
+		print("Received %s" % value)
