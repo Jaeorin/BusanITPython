@@ -1,235 +1,251 @@
-#!/user/bin/python
-#-*-coding:utf-8-*-
-from flask import Flask, Response, make_response, url_for, render_template, request, session, redirect
+from werkzeug.routing import BaseConverter
+from models import Board
+from database import db_session
+from flask import Flask, url_for, request, render_template, session, redirect
 from bs4 import BeautifulSoup
-from subprocess import PIPE, Popen
-from camera import Camera 
 import requests
-import sys
-import psutil
-import RPi.GPIO as GPIO
 
 
-LedPin = 19
-GPIO.setmode(GPIO.BCM)
-GPIO.setup(LedPin, GPIO.OUT)
+# 2
+class BoardView(BaseConverter):
+    def to_python(self, value):
+        record = db_session.query(Board).filter(Board.id == value).first()
+        return record
 
-reload(sys)
-sys.setdefaultencoding('utf8')
+    def to_url(self, record):
+        return record.id
 
-app = Flask(__name__)
-app.debug = True
 
-@app.route('/board', methods = ['GET'])
+app = Flask(__name__, template_folder="templates")
+
+# 3. 디버깅 여부
+# 설명
+# 여기에 3번 수업내용 설명
+# 현재 appStart.py 에서 매개변수로 디버깅 여부를 전달 중이므로 주석 처리
+# app.debug = True
+
+# 2
+app.url_map.converters["board"] = BoardView
+
+# 8
+app.secret_key = "iot_key"
+
+
+@app.route("/")
+def http_prepost_response():
+    iot: str = "Hello KITTY<br><img src=\"https://www.google.com/images/branding/googlelogo/1x" \
+               "/googlelogo_color_272x92dp.png\"><br> "
+    return iot
+
+
+# 1
+@app.before_first_request
+def before_first_request():
+    print("앱 기동하고 맨 처음 요청만 응답")
+
+
+@app.before_request
+def before_request():
+    print("매 요청마다 실행")
+
+
+@app.after_request
+def after_request(response):
+    print("매 요청 처리되고 나서 실행")
+    return response
+
+
+@app.teardown_request
+def teardown_request(exception):
+    if exception is not None:
+        print(exception)
+    print("브라우저가 응답하고 실행")
+
+
+@app.teardown_appcontext
+def teardown_app_context(exception):
+    if exception is not None:
+        print(exception)
+    print("HTTP 요청 애플리케이션 컨텍스트가 종료될 때 실행")
+
+
+# 2
+@app.route("/board/<board:record>", endpoint="view")
+def board_view_route(record):
+    return url_for("view", record=record)
+
+
+# 4 ~ 5.
+@app.route("/boardList")
+def board_list():
+    print("boardList")
+    return "<img src=\"https://www.google.com/images/branding/googlelogo/2x/googlelogo_color_272x92dp.png\">"
+
+
+@app.route("/staticImage")
+def static_image_response():
+    return "<img src=" + url_for("static", filename="1.jpg") + ">"
+
+
+# 6.
+@app.route("/getPost", methods=["GET"])
 def board_list_get():
     return ""
 
-@app.route('/board', methods = ['POST'])
+
+@app.route("/getPost", methods=["POST"])
 def board_list_post():
     return ""
 
-@app.route("/user/<uname>")
-def IoT_user_name(uname):
-    return "User name : %s" %uname
 
-@app.route("/user/<int:num_id>")
-def IoT_user_number_id(num_id):
-    return "ID Number : %d" %num_id
+# 7.
+@app.route("/user/<username>")
+def user_name(username):
+    return "User name : %s" % username
 
-@app.route("/login_test")
-def login_test():
-    return render_template('login.html')
 
-@app.route("/login", methods = ["POST", "GET"])
+@app.route("/user/<int:number>")
+def user_number_id(number):
+    return "ID Number : %d" % number
+
+
+# 7. GET  8. POST  9. Session_check
+@app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
-        session_check = request.form.get("uname", None)
-        if None == session_check:
+        session_check = request.form.get("username", None)
+        if session_check is None:
             if "logged_in" in session:
-                if True == session["logged_in"]:
-                    return session["uname"] + "님 환영합니다"
-            return login_test()
-        if request.form["uname"] == "iot":
-            if request.form["passwd"] == "2019":
-                session["logged_in"] = True
-                session["uname"] = request.form["uname"]
-                return session["uname"] + "님 환영합니다"
-        return "로그인 실패"
+                if session["logged_in"]:
+                    return session["username"] + "님 환영합니다"
+        if (request.form["username"] == "iot"
+                and request.form["password"] == "2019"):
+            session["logged_in"] = True
+            session["username"] = request.form["username"]
+            return request.form["username"] + "님 환영합니다"
+        else:
+            return "로그인 실패"
     else:
-        if "logged_in" in session:
-            if True == session["logged_in"]:
-                return session["uname"] + "님 환영합니다"
-        return login_test()
+        try:
+            if session["logged_in"]:
+                return session["username"] + "님 환영합니다"
+            else:
+                return login_page()
+        except session["logged_in"] as exception:
+            print(exception)
+            return login_page()
 
-@app.route("/logout", methods = ["POST", "GET"])
-def logout():
-    session["logged_in"] = False
-    session.pop("uname", None)
-    return "로그아웃 되셨습니다"
 
-@app.route("/template")
-@app.route("/template/")
-@app.route("/template/<iot_number>")
-def template_test(iot_number = None):
-    iot_members = ["최성주", "주수홍", "최재원"]
-    return render_template("template_test.html", iot_number=iot_number,
-                           iot_members=iot_members)
-
-app.secret_key = "iot_key"
-
-@app.route('/get_test', methods = ['GET'])
-def get_test():
+@app.route("/getLoginTest", methods=["GET"])
+def get_login_test():
     if request.method == "GET":
-        if (request.args.get("uname") == "iot"
-                and request.args.get("passwd") == "2019"):
-            return request.args.get("uname") + "님 환영합니다"
+        if (request.args.get("username") == "iot"
+                and request.args.get("password") == "2019"):
+            return request.args.get("username") + "님 환영합니다"
         else:
             return "로그인 실패"
     else:
         return "다시 시도해 주세요"
 
-@app.route("/gugu")
-@app.route("/gugu/")
-@app.route("/gugu/<int:iot_num>")
-def iot_gugu(iot_num=None):
-    return render_template("gugu.html", iot_num = iot_num)
-
-@app.route("/calcul", methods=["POST"])
-def calcul(iot_num=None):
-    if request.method == "POST":
-        if "" == request.form["iot_num"]:
-            cal_num = None
-        else:
-            cal_num = request.form["iot_num"]
-    else:
-        cal_num = None
-    return redirect(url_for("iot_gugu", iot_num = cal_num))
-
-@app.route("/iot")
-@app.route("/iot/")
-def iot():
-    result_req    = requests.get("http://busanit.ac.kr/p/?j=41")
-    result_txt    = result_req.text
-    result_head   = result_req.headers
-    result_status = result_req.status_code
-    if True == result_req.ok:
-        obj_soup  = BeautifulSoup(result_txt, "html.parser")
-        iot_data  = obj_soup.select("#ej-tbl > tbody > tr > td > a")
-        return render_template("main.html", iot_data = iot_data)
-    else:
-        return "가져오기 실패"
-
-@app.route("/iot2")
-@app.route("/iot2/")
-def iot2():
-    result_req    = requests.get("https://media.daum.net/")
-    result_txt    = result_req.text
-    result_head   = result_req.headers
-    result_status = result_req.status_code
-    if True == result_req.ok:
-        obj_soup  = BeautifulSoup(result_txt, "html.parser")
-        iot_data  = obj_soup.select("div.box_headline > ul.list_headline > li > strong.tit_g > a")
-        return render_template("main.html", iot_data = iot_data)
-    else:
-        return "가져오기 실패"
-
-@app.route("/iot3")
-@app.route("/iot3/")
-def iot3():
-    result_req    = requests.get("https://media.daum.net/ranking/bestreply/")
-    result_txt    = result_req.text
-    result_head   = result_req.headers
-    result_status = result_req.status_code
-    if True == result_req.ok:
-        obj_soup  = BeautifulSoup(result_txt, "html.parser")
-        iot_data  = obj_soup.select("div.cont_thumb > strong.tit_thumb > a")
-        return render_template("main.html", iot_data = iot_data)
-    else:
-        return "가져오기 실패"
-
-@app.route("/iot4")
-@app.route("/iot4/")
-def iot4():
-    result_req    = requests.get("https://sports.news.naver.com/index.nhn")
-    result_txt    = result_req.text
-    result_head   = result_req.headers
-    result_status = result_req.status_code
-    if True == result_req.ok:
-        obj_soup  = BeautifulSoup(result_txt, "html.parser")
-        iot_data  = obj_soup.select("div.main_article_box > ul.main_article_list > li > a")
-        return render_template("main.html", iot_data = iot_data)
-    else:
-        return "가져오기 실패"
-
-@app.route("/test_temp")
-def iot_test_temp():
-    iot_string = "파이썬"
-    iot_list = [1000, 1324, 6745, 2456, 3456]
-    return render_template('template.html', my_string = iot_string, my_list = iot_list)
-
-def iot_measure_temp(): 
-    process = Popen(["vcgencmd", "measure_temp"], stdout=PIPE) 
-    output, _error = process.communicate() 
-    return float(output[output.index("=") + 1:output.rindex("'")])
-
-@app.route("/info")
-def iot_sys_info():
-#==============================================================================
-    cpu_temp            = iot_measure_temp()
-    cpu_percent         = psutil.cpu_percent() 
-    cpu_count           = psutil.cpu_count()
-#==============================================================================
-    memory              = psutil.virtual_memory()
-    mem_total           = memory.total
-    mem_percent         = memory.percent
-#==============================================================================
-    hd_disk             = psutil.disk_usage("/")
-    disk_percent        = hd_disk.percent
-#==============================================================================
-    iot_sys_info_dict   = {
-                            "CPU 코어 갯수"       :cpu_count,
-                            "디스크 사용율"       :disk_percent,
-                            "메모리 사용율"       :mem_percent,
-                            "전체 메모리"         :mem_total,
-                            "CPU 사용율"          :cpu_percent,
-                            "CPU 온도"            :cpu_temp,
-                            }
-    return render_template('hw_info.html', hw_info = iot_sys_info_dict)
-
-@app.route("/led/<iot_state>")
-def led_onoff(iot_state):
-    if "on" == iot_state:
-        GPIO.output(LedPin, GPIO.HIGH)
-    if "off" == iot_state:
-        GPIO.output(LedPin, GPIO.LOW)
-    if "toggle" == iot_state:
-        GPIO.output(LedPin, not GPIO.input(LedPin))
-    return iot_sys_info()
-
-@app.route("/camera") 
-def iot_camera(): 
-    return render_template("camera.html")
-
-def iot_camera_start(camera): 
-    while True: 
-        frame = camera.get_frame() 
-        yield (b"--frame\r\n" b"Content-Type: image/jpeg\r\n\r\n" + frame + b"\r\n") 
- 
-@app.route("/camera_run") 
-def iot_camera_run(): 
-    return Response(iot_camera_start(Camera()), mimetype="multipart/x-mixed-replace; boundary=frame")
 
 @app.route("/log")
-def IoT_logging_test():
+def log():
     test_value = 20190211
     app.logger.debug("디버깅 시행 중")
     app.logger.warning(str(test_value) + "=====")
     app.logger.error("에러발생")
     return "로거 끝"
 
-@app.route("/")
-def IoT_http_prepost_response():
-	return "<img src=" + url_for("static", filename = "1.png") + ">"
 
-if __name__ == "__main__":
-	app.run(host = "192.168.0.210")
+# 8. 
+@app.route("/loginPage")
+def login_page():
+    return render_template("login.html")
+
+
+# 9
+@app.route("/logout", methods=["POST", "GET"])
+def logout():
+    session["logged_in"] = False
+    session.pop("uname", None)
+    return "로그아웃 되셨습니다"
+
+
+@app.route("/template")
+@app.route("/template/")
+@app.route("/template/<number>")
+def template(number=None):
+    members = ["최성주", "주수홍", "최재원"]
+    return render_template("template.html", number=number, members=members)
+
+
+# 10.
+@app.route("/multiplication")
+@app.route("/multiplication/")
+@app.route("/multiplication/<int:number>")
+def multiplication(number=None):
+    return render_template("multiplication.html", number=number)
+
+
+@app.route("/calculation", methods=["POST"])
+def calculation():
+    if request.method == "POST":
+        if "" == request.form["number"]:
+            calculation_number = None
+        else:
+            calculation_number = request.form["number"]
+    else:
+        calculation_number = None
+    return redirect(url_for("multiplication", number=calculation_number))
+
+
+@app.route("/iotPage")
+@app.route("/iotPage/")
+def iot_page():
+    result_req = requests.get("https://busanit.ac.kr/p/?j=41")
+    result_txt = result_req.text
+    if result_req.ok:
+        obj_soup = BeautifulSoup(result_txt, "html.parser")
+        data = obj_soup.select("#ej-tbl > tbody > tr > td > a")
+        return render_template("main.html", data=data)
+    else:
+        return "가져오기 실패"
+
+
+@app.route("/iotPage2")
+@app.route("/iotPage2/")
+def iot_page2():
+    result_req = requests.get("https://media.daum.net/")
+    result_txt = result_req.text
+    if result_req.ok:
+        obj_soup = BeautifulSoup(result_txt, "html.parser")
+        data = obj_soup.select("div.box_headline > ul.list_headline > li > strong.tit_g > a")
+        return render_template("main.html", data=data)
+    else:
+        return "가져오기 실패"
+
+
+@app.route("/iotPage3")
+@app.route("/iotPage3/")
+def iot_page3():
+    result_req = requests.get("https://media.daum.net/ranking/bestreply/")
+    result_txt = result_req.text
+    if result_req.ok:
+        obj_soup = BeautifulSoup(result_txt, "html.parser")
+        data = obj_soup.select("div.cont_thumb > strong.tit_thumb > a")
+        return render_template("main.html", data=data)
+    else:
+        return "가져오기 실패"
+
+
+@app.route("/iotPage4")
+@app.route("/iotPage4/")
+def iot_page4():
+    result_req = requests.get("https://sports.news.naver.com/index.nhn")
+    result_txt = result_req.text
+    if result_req.ok:
+        obj_soup = BeautifulSoup(result_txt, "html.parser")
+        data = obj_soup.select("div.main_article_box > ul.main_article_list > li > a")
+        return render_template("main.html", data=data)
+    else:
+        return "가져오기 실패"
